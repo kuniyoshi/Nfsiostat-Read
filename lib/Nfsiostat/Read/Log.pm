@@ -1,10 +1,10 @@
 use 5.10.0;
 use strict;
 use warnings;
-package Nfsiostat::Parser::Log;
+package Nfsiostat::Read::Log;
 use Readonly;
 use List::MoreUtils qw( mesh );
-use Nfsiostat::Parser;
+use Nfsiostat::Read;
 
 our $VERSION = "0.01";
 

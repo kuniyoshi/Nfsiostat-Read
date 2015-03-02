@@ -1,7 +1,7 @@
 use 5.10.0;
 use strict;
 use warnings;
-package Nfsiostat::Parser;
+package Nfsiostat::Read;
 use autodie qw( open close );
 use Readonly;
 
