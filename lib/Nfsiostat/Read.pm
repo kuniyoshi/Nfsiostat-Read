@@ -5,6 +5,8 @@ package Nfsiostat::Read;
 use autodie qw( open close );
 use Readonly;
 
+# ABSTRACT: reads /proc/self/mountstats and format it
+
 our $VERSION = "0.01";
 
 Readonly my $PROC_FILE       => "/proc/self/mountstats";
@@ -184,3 +186,11 @@ device nfs-server:/remote/mount/point mounted on /local/mount/point with fstype 
 	      FSINFO: 2 2 0 240 160 0 0 0
 	    PATHCONF: 1 1 0 120 56 0 0 0
 	      COMMIT: 0 0 0 0 0 0 0 0
+
+=pod
+
+=head1 SYNOPSIS
+
+  my $nfsiostat = Nfsiostat::Read->new;
+  say $_
+      for $nfsiostat->load->parse->make_logs;
