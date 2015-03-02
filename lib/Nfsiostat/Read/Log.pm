@@ -15,10 +15,10 @@ sub parse {
     my $line  = shift;
 
     my( $age, $device, $action, @fields ) = split m{\t}, $line;
-    my %stat = mesh( @Nfsiostat::Parser::FIELD_NAMES, @fields );
+    my %stat = mesh( @Nfsiostat::Read::FIELD_NAMES, @fields );
 
   DIFF_WITH_PREVIOUS:
-    for my $name ( @Nfsiostat::Parser::FIELD_NAMES ) {
+    for my $name ( @Nfsiostat::Read::FIELD_NAMES ) {
         if ( !exists $PREVIOUS_STAT{ $device }{ $action }{ $name }{age} ) {
             @{ $PREVIOUS_STAT{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat{ $name } );
             next;
@@ -36,7 +36,7 @@ sub parse {
     $stat{avg_request_ms}  = $stat{operations} / $stat{cumulative_total_request_ms};
 
   CHANGE_CURRENT_TO_PREVIOUS:
-    for my $name ( @Nfsiostat::Parser::FIELD_NAMES ) {
+    for my $name ( @Nfsiostat::Read::FIELD_NAMES ) {
         @{ $PREVIOUS_STAT{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat{ $name} );
     }
 
