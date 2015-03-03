@@ -61,7 +61,7 @@ while ( <> ) {
     next
         if $line2 =~ m{\A [#] }msx;
 
-    my %log = Nfsiostat::Read::Log->parse( $line2 )
+    my %log = Nfsiostat::Reader::Log->parse( $line2 )
         or next;
 
     say Data::Dumper->new( [ \%log ] )->Indent( 0 )->Dump;

@@ -6,7 +6,7 @@ use warnings;
 use 5.10.0;
 use strict;
 use warnings;
-package Nfsiostat::Read;
+package Nfsiostat::Reader;
 use autodie qw( open close );
 use Readonly;
 
@@ -158,7 +158,7 @@ sub make_logs {
 use 5.10.0;
 use strict;
 use warnings;
-package Nfsiostat::Read::Log;
+package Nfsiostat::Reader::Log;
 use Readonly;
 use List::MoreUtils qw( mesh );
 
@@ -172,10 +172,10 @@ sub parse {
     my $line  = shift;
 
     my( $age, $device, $action, @fields ) = split m{\t}, $line;
-    my %stat = mesh( @Nfsiostat::Read::FIELD_NAMES, @fields );
+    my %stat = mesh( @Nfsiostat::Reader::FIELD_NAMES, @fields );
 
   DIFF_WITH_PREVIOUS:
-    for my $name ( @Nfsiostat::Read::FIELD_NAMES ) {
+    for my $name ( @Nfsiostat::Reader::FIELD_NAMES ) {
         if ( !exists $PREVIOUS_STAT{ $device }{ $action }{ $name }{age} ) {
             @{ $PREVIOUS_STAT{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat{ $name } );
             next;
@@ -193,7 +193,7 @@ sub parse {
     $stat{avg_request_ms}  = $stat{operations} / $stat{cumulative_total_request_ms};
 
   CHANGE_CURRENT_TO_PREVIOUS:
-    for my $name ( @Nfsiostat::Read::FIELD_NAMES ) {
+    for my $name ( @Nfsiostat::Reader::FIELD_NAMES ) {
         @{ $PREVIOUS_STAT{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat{ $name} );
     }
 
@@ -208,7 +208,7 @@ our $iteration ||= 22;
 
 my $count;
 
-my $reader = Nfsiostat::Read->new;
+my $reader = Nfsiostat::Reader->new;
 
 while ( $count++ < $iteration ) {
     say $_

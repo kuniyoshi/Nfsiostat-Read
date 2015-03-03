@@ -53,7 +53,7 @@ our $iteration ||= 22;
 
 my $count;
 
-my $reader = Nfsiostat::Read->new;
+my $reader = Nfsiostat::Reader->new;
 
 while ( $count++ < $iteration ) {
     say $_
