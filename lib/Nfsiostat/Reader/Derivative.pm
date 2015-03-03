@@ -1,12 +1,14 @@
 use 5.10.0;
 use strict;
 use warnings;
-package Nfsiostat::Read::Log;
+package Nfsiostat::Reader::Derivative;
 use Readonly;
 use List::MoreUtils qw( mesh );
-use Nfsiostat::Read;
+use Nfsiostat::Reader;
 
 our $VERSION = "0.01";
+
+Readonly my @FIELD_NAMES => @Nfsiostat::Reader::FIELD_NAMES;
 
 my %PREVIOUS_STAT;
 
@@ -15,10 +17,10 @@ sub parse {
     my $line  = shift;
 
     my( $age, $device, $action, @fields ) = split m{\t}, $line;
-    my %stat = mesh( @Nfsiostat::Read::FIELD_NAMES, @fields );
+    my %stat = mesh( @FIELD_NAMES, @fields );
 
   DIFF_WITH_PREVIOUS:
-    for my $name ( @Nfsiostat::Read::FIELD_NAMES ) {
+    for my $name ( @FIELD_NAMES ) {
         if ( !exists $PREVIOUS_STAT{ $device }{ $action }{ $name }{age} ) {
             @{ $PREVIOUS_STAT{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat{ $name } );
             next;
@@ -36,7 +38,7 @@ sub parse {
     $stat{avg_request_ms}  = $stat{operations} / $stat{cumulative_total_request_ms};
 
   CHANGE_CURRENT_TO_PREVIOUS:
-    for my $name ( @Nfsiostat::Read::FIELD_NAMES ) {
+    for my $name ( @FIELD_NAMES ) {
         @{ $PREVIOUS_STAT{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat{ $name} );
     }
 

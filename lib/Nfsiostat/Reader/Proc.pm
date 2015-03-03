@@ -1,11 +1,10 @@
 use 5.10.0;
 use strict;
 use warnings;
-package Nfsiostat::Read;
+package Nfsiostat::Reader::Proc;
 use autodie qw( open close );
 use Readonly;
-
-# ABSTRACT: reads /proc/self/mountstats and format it
+use Nfsiostat::Reader;
 
 our $VERSION = "0.01";
 
@@ -33,16 +32,7 @@ Readonly my $PER_OP_RE       => qr{
     (?<cumulative_total_request_ms>\d+)
     \z
 }msx;
-Readonly our @FIELD_NAMES        => qw(
-    operations
-    transmissions
-    major_timeouts
-    bytes_sent
-    bytes_received
-    cumulative_queue_ms
-    cumulative_response_ms
-    cumulative_total_request_ms
-);
+Readonly our @FIELD_NAMES        => @Nfsiostat::Reader::FIELD_NAMES;
 Readonly our @VALID_ACTIONS      => qw(
 	NULL
 	GETATTR
@@ -186,11 +176,3 @@ device nfs-server:/remote/mount/point mounted on /local/mount/point with fstype 
 	      FSINFO: 2 2 0 240 160 0 0 0
 	    PATHCONF: 1 1 0 120 56 0 0 0
 	      COMMIT: 0 0 0 0 0 0 0 0
-
-=pod
-
-=head1 SYNOPSIS
-
-  my $nfsiostat = Nfsiostat::Read->new;
-  say $_
-      for $nfsiostat->load->parse->make_logs;
