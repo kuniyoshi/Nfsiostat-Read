@@ -2,11 +2,11 @@ use 5.10.0;
 use strict;
 use warnings;
 package Nfsiostat::Reader::Proc;
+use base "Nfsiostat::Reader";
 use autodie qw( open close );
 use Readonly;
-use Nfsiostat::Reader;
 
-our $VERSION = "0.01";
+our $VERSION = "0.000";
 
 Readonly my $PROC_FILE       => "/proc/self/mountstats";
 Readonly my $DEVICE_PARSE_RE => qr{
@@ -32,7 +32,6 @@ Readonly my $PER_OP_RE       => qr{
     (?<cumulative_total_request_ms>\d+)
     \z
 }msx;
-Readonly our @FIELD_NAMES        => @Nfsiostat::Reader::FIELD_NAMES;
 Readonly our @VALID_ACTIONS      => qw(
 	NULL
 	GETATTR
@@ -78,11 +77,12 @@ sub new {
 sub load {
     my $self     = shift;
     my $filename = shift || $PROC_FILE;
+    my $loaded_at = time;
     open my $FH, "<", $filename;
     chomp( my @lines = <$FH> );
     $self->{_lines} = \@lines;
     close $FH;
-    return $self;
+    $self->{_loaded_at} = $loaded_at;
 }
 
 sub parse {
@@ -113,8 +113,6 @@ sub parse {
     $statistics{age} = $age;
 
     $self->{_statistics} = \%statistics;
-
-    return $self;
 }
 
 sub interested_actions {
@@ -126,6 +124,7 @@ sub make_logs {
     my $self = shift;
     my %statistics = %{ $self->{_statistics} };
     my $age = $statistics{age};
+    my $time = $self->{_loaded_at};
     my @devices = grep { $_ ne "age" } keys %statistics;
     my @logs;
 
@@ -133,11 +132,32 @@ sub make_logs {
         for my $action ( keys %{ $statistics{ $device } } ) {
             next
                 if !grep { $_ eq $action } $self->interested_actions;
-            push @logs, join "\t", $age, $device, $action, @{ $statistics{ $device }{ $action } }{ @FIELD_NAMES };
+
+
+            push @logs, join "\t", $time, $age, $device, $action, @{ $statistics{ $device }{ $action } }{ $self->field_names };
         }
     }
 
-    return @logs;
+    die "Could not make_logs"
+        unless @logs; # safety trigger to prevent high speed read loop.
+
+    $self->{_logs} = \@logs;
+}
+
+sub read {
+    my $self = shift;
+
+    return shift @{ $self->{_logs} }
+        if @{ $self->{_logs} || [ ] };
+
+    $self->load;
+    $self->parse;
+    $self->make_logs;
+
+    return
+        if $self->{_logs}; # not first time.
+
+    return shift @{ $self->{_logs} }; # is first time.
 }
 
 1;

@@ -2,44 +2,54 @@ use 5.10.0;
 use strict;
 use warnings;
 package Nfsiostat::Reader::Derivative;
-use Readonly;
+use base "Nfsiostat::Reader";
 use List::MoreUtils qw( mesh );
-use Nfsiostat::Reader;
 
-our $VERSION = "0.01";
+our $VERSION = "0.000";
 
-Readonly my @FIELD_NAMES => @Nfsiostat::Reader::FIELD_NAMES;
+sub new {
+    my $class = shift;
+    my %param = @_;
+    my $handler = delete $param{handler} || *ARGV;
+    my $self = bless { _handler => $handler }, $class;
+    return $self;
+}
 
-my %PREVIOUS_STAT;
+sub handler { shift->{_handler} }
+
+sub previous { shift->{_previous} ||= { } }
 
 sub parse {
-    my $class = shift;
-    my $line  = shift;
+    my $self = shift;
+    my $line = shift;
 
     my( $age, $device, $action, @fields ) = split m{\t}, $line;
-    my %stat = mesh( @FIELD_NAMES, @fields );
+    my @field_names = $self->field_names;
+    my %stat = mesh( @field_names, @fields );
+    my %stat_for_previous = %stat;
+    my $previous_ref = $self->previous; # inout parameter
 
   DIFF_WITH_PREVIOUS:
-    for my $name ( @FIELD_NAMES ) {
-        if ( !exists $PREVIOUS_STAT{ $device }{ $action }{ $name }{age} ) {
-            @{ $PREVIOUS_STAT{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat{ $name } );
+    for my $name ( @field_names ) {
+        if ( !exists $previous_ref->{ $device }{ $action }{ $name }{age} ) {
+            @{ $previous_ref->{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat{ $name } );
             next;
         }
 
-        $stat{ $name } = $PREVIOUS_STAT{ $device }{ $action }{ $name }{value}
-        / ( $age - $PREVIOUS_STAT{ $device }{ $action }{ $name }{age} );
+        $stat{ $name } = $previous_ref->{ $device }{ $action }{ $name }{value}
+        / ( $age - $previous_ref->{ $device }{ $action }{ $name }{age} );
     }
 
     return
-        if $PREVIOUS_STAT{ $device }{ $action }{operations}{age} == $age;
+        if $previous_ref->{ $device }{ $action }{operations}{age} == $age;
 
     $stat{avg_queue_ms}    = $stat{transmissions} / $stat{cumulative_queue_ms};
     $stat{avg_response_ms} = $stat{transmissions} / $stat{cumulative_response_ms};
-    $stat{avg_request_ms}  = $stat{operations} / $stat{cumulative_total_request_ms};
+    $stat{avg_request_ms}  = $stat{operations}    / $stat{cumulative_total_request_ms};
 
   CHANGE_CURRENT_TO_PREVIOUS:
-    for my $name ( @FIELD_NAMES ) {
-        @{ $PREVIOUS_STAT{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat{ $name} );
+    for my $name ( @field_names ) {
+        @{ $previous_ref->{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat_for_previous{ $name} );
     }
 
     return ( device => $device, action => $action, stat => \%stat );
