@@ -2,20 +2,62 @@
 use 5.10.0;
 use strict;
 use warnings;
-use Data::Dumper;
 
-$Data::Dumper::Terse    = 1;
-$Data::Dumper::Sortkeys = 1;
-$Data::Dumper::Indent   = 1;
+use strict;
+use warnings;
+package Nfsiostat::Reader;
+use Readonly;
+use Carp ( );
+
+
+
+# ABSTRACT: read from /proc/self/mountstats into perl data
+
+our $VERSION = "0.000";
+
+Readonly our @FIELD_NAMES => qw(
+    operations
+    transmissions
+    major_timeouts
+    bytes_sent
+    bytes_received
+    cumulative_queue_ms
+    cumulative_response_ms
+    cumulative_total_request_ms
+);
+Readonly my %SUB_CLASS => (
+    proc  => join( q{::}, __PACKAGE__, "Proc" ),
+    stdin => join( q{::}, __PACKAGE__, "Derivative" ),
+);
+
+sub field_names { @FIELD_NAMES }
+
+sub new {
+    my $class = shift;
+    my %param = @_;
+    my $from = delete $param{from}
+        or Carp::croak( "from required." );
+
+    Carp::croak( "Unknown from[$from] found." )
+          unless exists $SUB_CLASS{ $from };
+
+    $class = $SUB_CLASS{ $from };
+    my $self = $class->new( %param );
+
+    return $self;
+}
+
+1;
 
 use 5.10.0;
 use strict;
 use warnings;
-package Nfsiostat::Reader;
+package Nfsiostat::Reader::Proc;
+use base "Nfsiostat::Reader";
 use autodie qw( open close );
 use Readonly;
 
-our $VERSION = "0.01";
+our $VERSION = "0.000";
 
 Readonly my $PROC_FILE       => "/proc/self/mountstats";
 Readonly my $DEVICE_PARSE_RE => qr{
@@ -41,16 +83,6 @@ Readonly my $PER_OP_RE       => qr{
     (?<cumulative_total_request_ms>\d+)
     \z
 }msx;
-Readonly our @FIELD_NAMES        => qw(
-    operations
-    transmissions
-    major_timeouts
-    bytes_sent
-    bytes_received
-    cumulative_queue_ms
-    cumulative_response_ms
-    cumulative_total_request_ms
-);
 Readonly our @VALID_ACTIONS      => qw(
 	NULL
 	GETATTR
@@ -96,11 +128,12 @@ sub new {
 sub load {
     my $self     = shift;
     my $filename = shift || $PROC_FILE;
+    my $loaded_at = time;
     open my $FH, "<", $filename;
     chomp( my @lines = <$FH> );
     $self->{_lines} = \@lines;
     close $FH;
-    return $self;
+    $self->{_loaded_at} = $loaded_at;
 }
 
 sub parse {
@@ -131,8 +164,6 @@ sub parse {
     $statistics{age} = $age;
 
     $self->{_statistics} = \%statistics;
-
-    return $self;
 }
 
 sub interested_actions {
@@ -144,6 +175,7 @@ sub make_logs {
     my $self = shift;
     my %statistics = %{ $self->{_statistics} };
     my $age = $statistics{age};
+    my $time = $self->{_loaded_at};
     my @devices = grep { $_ ne "age" } keys %statistics;
     my @logs;
 
@@ -151,11 +183,32 @@ sub make_logs {
         for my $action ( keys %{ $statistics{ $device } } ) {
             next
                 if !grep { $_ eq $action } $self->interested_actions;
-            push @logs, join "\t", $age, $device, $action, @{ $statistics{ $device }{ $action } }{ @FIELD_NAMES };
+
+
+            push @logs, join "\t", $time, $age, $device, $action, @{ $statistics{ $device }{ $action } }{ $self->field_names };
         }
     }
 
-    return @logs;
+    die "Could not make_logs"
+        unless @logs; # safety trigger to prevent high speed read loop.
+
+    $self->{_logs} = \@logs;
+}
+
+sub read {
+    my $self = shift;
+
+    return shift @{ $self->{_logs} }
+        if @{ $self->{_logs} || [ ] };
+
+    $self->load;
+    $self->parse;
+    $self->make_logs;
+
+    return
+        if $self->{_logs}; # not first time.
+
+    return shift @{ $self->{_logs} }; # is first time.
 }
 
 1;
@@ -163,43 +216,55 @@ sub make_logs {
 use 5.10.0;
 use strict;
 use warnings;
-package Nfsiostat::Reader::Log;
-use Readonly;
+package Nfsiostat::Reader::Derivative;
+use base "Nfsiostat::Reader";
 use List::MoreUtils qw( mesh );
 
+our $VERSION = "0.000";
 
-our $VERSION = "0.01";
+sub new {
+    my $class = shift;
+    my %param = @_;
+    my $handler = delete $param{handler} || *ARGV;
+    my $self = bless { _handler => $handler }, $class;
+    return $self;
+}
 
-my %PREVIOUS_STAT;
+sub handler { shift->{_handler} }
+
+sub previous { shift->{_previous} ||= { } }
 
 sub parse {
-    my $class = shift;
-    my $line  = shift;
+    my $self = shift;
+    my $line = shift;
 
     my( $age, $device, $action, @fields ) = split m{\t}, $line;
-    my %stat = mesh( @Nfsiostat::Reader::FIELD_NAMES, @fields );
+    my @field_names = $self->field_names;
+    my %stat = mesh( @field_names, @fields );
+    my %stat_for_previous = %stat;
+    my $previous_ref = $self->previous; # inout parameter
 
   DIFF_WITH_PREVIOUS:
-    for my $name ( @Nfsiostat::Reader::FIELD_NAMES ) {
-        if ( !exists $PREVIOUS_STAT{ $device }{ $action }{ $name }{age} ) {
-            @{ $PREVIOUS_STAT{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat{ $name } );
+    for my $name ( @field_names ) {
+        if ( !exists $previous_ref->{ $device }{ $action }{ $name }{age} ) {
+            @{ $previous_ref->{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat{ $name } );
             next;
         }
 
-        $stat{ $name } = $PREVIOUS_STAT{ $device }{ $action }{ $name }{value}
-        / ( $age - $PREVIOUS_STAT{ $device }{ $action }{ $name }{age} );
+        $stat{ $name } = $previous_ref->{ $device }{ $action }{ $name }{value}
+        / ( $age - $previous_ref->{ $device }{ $action }{ $name }{age} );
     }
 
     return
-        if $PREVIOUS_STAT{ $device }{ $action }{operations}{age} == $age;
+        if $previous_ref->{ $device }{ $action }{operations}{age} == $age;
 
     $stat{avg_queue_ms}    = $stat{transmissions} / $stat{cumulative_queue_ms};
     $stat{avg_response_ms} = $stat{transmissions} / $stat{cumulative_response_ms};
-    $stat{avg_request_ms}  = $stat{operations} / $stat{cumulative_total_request_ms};
+    $stat{avg_request_ms}  = $stat{operations}    / $stat{cumulative_total_request_ms};
 
   CHANGE_CURRENT_TO_PREVIOUS:
-    for my $name ( @Nfsiostat::Reader::FIELD_NAMES ) {
-        @{ $PREVIOUS_STAT{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat{ $name} );
+    for my $name ( @field_names ) {
+        @{ $previous_ref->{ $device }{ $action }{ $name } }{ qw( age value ) } = ( $age, $stat_for_previous{ $name} );
     }
 
     return ( device => $device, action => $action, stat => \%stat );
@@ -208,19 +273,25 @@ sub parse {
 1;
 
 package main;
+use Time::TAI64;
+use Data::Dumper;
+
+$Data::Dumper::Terse    = 1;
+$Data::Dumper::Sortkeys = 1;
+$Data::Dumper::Indent   = 0;
+
+my $reader = Nfsiostat::Reader->new( from => "stdin" );
 
 while ( <> ) {
     chomp( my $line = $_ );
-    my( $_tai64n, $line2 ) = split m{\s}, $line, 2;
+    my( $tai64n, $nfsiostat_line ) = split m{\s}, $line, 2;
 
     next
-        if $line2 =~ m{\A [#] }msx;
+        if 0 == index $nfsiostat_line, q{#};
 
-    my %log = Nfsiostat::Reader::Log->parse( $line2 )
+    my %log = $reader->parse( $nfsiostat_line )
         or next;
 
-    say Data::Dumper->new( [ \%log ] )->Indent( 0 )->Dump;
+    say Dumper \%log;
 }
-
-exit;
 
