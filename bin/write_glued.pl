@@ -12,6 +12,8 @@ $Data::Dumper::Terse    = 1;
 $Data::Dumper::Sortkeys = 1;
 $Data::Dumper::Indent   = 1;
 
+our $VERSION = "0.000";
+
 our $from;
 die usage( )
     unless defined $from;
